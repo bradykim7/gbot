@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # 디스코드 봇
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+    networks:
+      - gbot-network
+
+  # 웹 크롤러
+  crawler:
+    build:
+      context: .
+      dockerfile: Dockerfile.crawler
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+    networks:
+      - gbot-network
+
+  # MongoDB
+  mongodb:
+    image: mongo:5.0
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=discord_bot
+    ports:
+      - "27017:27017"
+    networks:
+      - gbot-network
+
+networks:
+  gbot-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:

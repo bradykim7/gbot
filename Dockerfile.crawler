@@ -1,0 +1,40 @@
+FROM golang:1.21-alpine AS builder
+
+# Git 및 빌드 필수 요소 설치
+RUN apk add --no-cache git gcc musl-dev
+
+# 작업 디렉토리 설정
+WORKDIR /app
+
+# 레이어 캐싱을 위해 go 모듈 파일을 먼저 복사
+COPY go.mod go.sum ./
+
+# 의존성 다운로드
+RUN go mod download
+
+# 소스 코드 복사
+COPY . .
+
+# 애플리케이션 빌드
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o pricesota ./cmd/pricesota
+
+# 최종 컨테이너를 위한 가벼운 알파인 이미지 사용
+FROM alpine:latest
+
+# HTTPS 요청을 위한 ca-certificates 및 타임존 설정을 위한 tzdata 설치
+RUN apk --no-cache add ca-certificates tzdata
+
+# 타임존을 서울로 설정
+ENV TZ=Asia/Seoul
+
+# 비루트 사용자 생성
+RUN adduser -D -h /app appuser
+USER appuser
+
+WORKDIR /app
+
+# 빌더 단계에서 바이너리 복사
+COPY --from=builder /app/pricesota .
+
+# 진입점 설정
+ENTRYPOINT ["./pricesota"]
