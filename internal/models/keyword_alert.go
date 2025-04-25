@@ -6,14 +6,16 @@ import (
 
 // KeywordAlert는 키워드 기반 상품 알림을 나타냅니다
 type KeywordAlert struct {
-	ID        string `bson:"_id,omitempty"`
-	Keyword   string `bson:"keyword"`
-	UserID    string `bson:"user_id"`
-	Username  string `bson:"username"`
-	ChannelID string `bson:"channel_id"`
-	GuildID   string `bson:"guild_id"`
-	CreatedAt int64  `bson:"created_at"`
-	IsActive  bool   `bson:"is_active"`
+	ID          string `bson:"_id,omitempty"`
+	Keyword     string `bson:"keyword"`
+	UserID      string `bson:"user_id"`
+	Username    string `bson:"username"`
+	ChannelID   string `bson:"channel_id"`
+	GuildID     string `bson:"guild_id"`
+	CreatedAt   int64  `bson:"created_at"`
+	IsActive    bool   `bson:"is_active"`
+	LastNotified int64  `bson:"last_notified,omitempty"` // 마지막 알림 시간
+	NotifyCount  int    `bson:"notify_count,omitempty"`  // 알림 횟수
 }
 
 // String은 알림의 문자열 표현을 반환합니다

@@ -41,8 +41,8 @@ func main() {
 		cancel()
 	}()
 	
-	// Initialize crawler
-	webCrawler, err := crawler.New(cfg, log)
+	// Initialize improved crawler
+	webCrawler, err := crawler.NewImprovedCrawler(cfg, log)
 	if err != nil {
 		log.Fatal("Failed to initialize crawler", zap.Error(err))
 	}

@@ -1,77 +1,104 @@
-# Discord Bot - Go Implementation
+# Discord Bot & Web Crawler System
 
-## Overview
-This repository contains a Discord bot written in Go. It has two main components:
-1. **HybaBot** - A Discord bot that handles user commands
-2. **PriceSota** - A web crawler that scans deal websites and sends notifications
+## 프로젝트 개요 (Project Overview)
 
-## Bug Fixes
-The following bugs were fixed in the latest update:
+이 프로젝트는 두 개의 주요 구성 요소를 가진 시스템입니다:
 
-1. **Command Registry**:
-   - Fixed inconsistency between direct handler registration and command registry pattern
-   - Implemented the Command interface properly for all commands
-   - Removed redundant command handlers
+1. **Discord Bot (HybaBot)**: 사용자 명령어 처리 및 키워드 알림 등록 관리
+2. **Web Crawler (PriceSota)**: 특가 사이트 크롤링 및 등록된 키워드와 일치하는 상품 발견 시 알림 전송
 
-2. **Logger Consistency**:
-   - Fixed inconsistent logger usage between zap.Logger and custom logger
-   - Improved error handling in logger initialization
-   - Added better context to log messages
+## 시스템 아키텍처 (System Architecture)
 
-3. **Model Structure**:
-   - Added missing Username field to KeywordAlert model
-   - Fixed inconsistencies in data structures
-   - Enhanced Product model with additional fields needed for notifications
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│                 │    │                 │    │                 │
+│   Discord Bot   │◄──►│     MongoDB     │◄──►│   Web Crawler   │
+│    (HybaBot)    │    │                 │    │   (PriceSota)   │
+│                 │    │                 │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+        ▲                                              │
+        │                                              │
+        │                                              ▼
+┌─────────────────┐                        ┌─────────────────────┐
+│                 │                        │                     │
+│  Discord Users  │                        │   Deal Websites     │
+│                 │                        │   (Ppomppu, etc.)   │
+│                 │                        │                     │
+└─────────────────┘                        └─────────────────────┘
+```
 
-4. **Command Processing**:
-   - Improved command argument parsing
-   - Added better help messages and error responses
-   - Fixed prefix handling in ping command
-   
-5. **Crawler Improvements**:
-   - Fixed product data collection in PpomppuCrawler
-   - Added proper price string handling
-   - Improved user notification to handle missing usernames
-   - Added fallback to user ID mentions when usernames are not available
-   
-6. **Discord Bot Notifications**:
-   - Fixed price display in product notifications
-   - Improved error handling in notification sending
-   - Added proper formatting of timestamps
+### 핵심 기능 (Key Features)
 
-## Features
-- **Commands**:
-  - `!ping` - Check bot latency
-  - `!alert add [keyword]` - Add a keyword alert
-  - `!alert remove [keyword]` - Remove a keyword alert
-  - `!alert list` - List all your keyword alerts
-  - `!food lunch` - Get a random lunch recommendation
-  - `!food dinner` - Get a random dinner recommendation
-  - `!food list [lunch/dinner]` - List all foods
-  - `!food add [lunch/dinner] [name]` - Add a food
-  - `!food remove [lunch/dinner] [name]` - Remove a food
+1. **Discord Bot**:
+   - 키워드 알림 등록/삭제/목록 보기
+   - 음식 추천 (점심/저녁)
+   - Ping 명령어를 통한 상태 확인
 
-## Setup
-1. Clone the repository
-2. Create a .env file with your Discord token and MongoDB URI
-3. Run `go build ./cmd/hybabot` to build the bot
-4. Run `go build ./cmd/pricesota` to build the crawler
+2. **Web Crawler**:
+   - 여러 특가 사이트 동시 크롤링
+   - MongoDB에 상품 데이터 저장
+   - 등록된 키워드와 일치하는 상품 발견 시 Discord 알림 전송
 
-## Configuration
-The following environment variables are used:
-- `DISCORD_TOKEN` - Your Discord bot token
-- `DISCORD_GUILD` - Your Discord guild ID (optional)
-- `COMMAND_PREFIX` - Command prefix (default: !)
-- `MONGODB_URI` - MongoDB connection URI
-- `PRODUCT_CHANNEL_ID` - Channel ID for product notifications
+## 개선된 기능 (Improved Features)
 
-## Korean Commands
-모든 명령어는 한국어로도 사용할 수 있습니다:
-- `!알림 추가 [키워드]` - 키워드 알림 추가
-- `!알림 삭제 [키워드]` - 키워드 알림 삭제
-- `!알림 목록` - 모든 키워드 알림 보기
-- `!메뉴 점심` - 점심 추천 받기
-- `!메뉴 저녁` - 저녁 추천 받기
-- `!메뉴 목록 [점심/저녁]` - 모든 메뉴 보기
-- `!메뉴 추가 [점심/저녁] [이름]` - 메뉴 추가
-- `!메뉴 삭제 [점심/저녁] [이름]` - 메뉴 삭제
+최근 개선된 기능들:
+
+1. **향상된 크롤러 (Improved Crawler)**:
+   - 멀티소스 병렬 크롤링
+   - 강화된 오류 처리 및 재시도 로직
+   - 자세한 통계 수집
+
+2. **효율적인 알림 시스템 (Efficient Notification System)**:
+   - 더 나은 키워드 매칭 알고리즘
+   - 사용자 정보 처리 개선
+   - 이미지 및 할인율 표시 지원
+
+3. **확장된 데이터 모델 (Enhanced Data Models)**:
+   - 통계 및 메타데이터 수집
+   - 이미지 URL 및 할인율 지원
+   - 알림 상태 추적
+
+## 설치 방법 (Installation)
+
+### 요구 사항 (Requirements)
+- Go 1.16+
+- MongoDB
+- Discord Bot Token
+
+### 환경 변수 설정 (Environment Variables)
+```
+DISCORD_TOKEN=your_discord_bot_token
+COMMAND_PREFIX=!
+MONGODB_URI=mongodb://localhost:27017/discord_bot
+CRAWL_INTERVAL_MINUTES=30
+PRODUCT_CHANNEL_ID=your_discord_channel_id
+```
+
+### 빌드 방법 (Build Instructions)
+```bash
+# Discord Bot 빌드
+go build -o hybabot ./cmd/hybabot
+
+# Web Crawler 빌드
+go build -o pricesota ./cmd/pricesota
+```
+
+### Docker 실행 방법 (Docker Setup)
+```bash
+# Docker Compose로 모든 서비스 실행
+docker-compose up -d
+```
+
+## 사용 가이드 (Usage Guide)
+
+### Discord Bot 명령어 (Commands)
+- `!ping` - 봇 응답 시간 확인
+- `!alert add [키워드]` - 키워드 알림 추가
+- `!alert remove [키워드]` - 키워드 알림 삭제
+- `!alert list` - 알림 목록 보기
+- `!메뉴 점심` - 점심 추천
+- `!메뉴 저녁` - 저녁 추천
+
+### 개발자 정보 (Developer Information)
+이 프로젝트는 Python 버전에서 Go로 마이그레이션되었으며, 병렬 처리와 타입 안전성을 최대한 활용하도록 설계되었습니다.
+

@@ -49,11 +49,11 @@ func (c *FoodCommand) Execute(s *discordgo.Session, m *discordgo.MessageCreate, 
 // Help implements the Command interface
 func (c *FoodCommand) Help() string {
 	return fmt.Sprintf("**Food Command Usage**\n"+
-		"%sfood lunch/점심 - Get lunch recommendation\n"+
-		"%sfood dinner/저녁 - Get dinner recommendation\n"+
-		"%sfood list/목록 [lunch/dinner] - List all registered food\n"+
-		"%sfood add/추가 [lunch/dinner] [name] - Add new food\n"+
-		"%sfood remove/삭제 [lunch/dinner] [name] - Remove food",
+		"%s food lunch/점심 - Get lunch recommendation\n"+
+		"%s food dinner/저녁 - Get dinner recommendation\n"+
+		"%s food list/목록 [lunch/dinner] - List all registered food\n"+
+		"%s food add/추가 [lunch/dinner] [name] - Add new food\n"+
+		"%s food remove/삭제 [lunch/dinner] [name] - Remove food",
 		c.prefix, c.prefix, c.prefix, c.prefix, c.prefix)
 }
 

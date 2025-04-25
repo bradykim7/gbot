@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"time"
@@ -52,11 +53,16 @@ func (r *FoodRepository) GetRandomFood(ctx context.Context, foodType models.Food
 		return nil, fmt.Errorf("no foods found for type %s", foodType)
 	}
 	
-	// Get a random index
-	randomIndex := r.random.Int63n(count)
+	// Get a random index using a cryptographically secure random number
+	// to avoid potential bias in the selection
+	randomIndexInt64, err := secureRandomInt64(count)
+	if err != nil {
+		// Fall back to the standard random if crypto random fails
+		randomIndexInt64 = r.random.Int63n(count)
+	}
 	
 	// Find the document at that index
-	opts := options.Find().SetSkip(randomIndex).SetLimit(1)
+	opts := options.Find().SetSkip(randomIndexInt64).SetLimit(1)
 	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find food: %w", err)
@@ -75,149 +81,40 @@ func (r *FoodRepository) GetRandomFood(ctx context.Context, foodType models.Food
 	return nil, fmt.Errorf("no food found at random index")
 }
 
-// GetAllFoods returns all foods of the given type
-func (r *FoodRepository) GetAllFoods(ctx context.Context, foodType models.FoodType) ([]models.Food, error) {
-	// Get collection
-	collection := r.db.Collection("foods")
-	
-	// Create filter for active foods of given type
-	filter := bson.M{
-		"food_type": foodType,
-		"is_active": true,
+// secureRandomInt64 generates a cryptographically secure random number in range [0, max)
+func secureRandomInt64(max int64) (int64, error) {
+	if max <= 0 {
+		return 0, fmt.Errorf("max must be positive")
 	}
-	
-	// Find all matching foods
-	cursor, err := collection.Find(ctx, filter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find foods: %w", err)
-	}
-	defer cursor.Close(ctx)
-	
-	// Decode foods
-	var foods []models.Food
-	if err := cursor.All(ctx, &foods); err != nil {
-		return nil, fmt.Errorf("failed to decode foods: %w", err)
-	}
-	
-	return foods, nil
-}
 
-// SaveFood saves a food to the database
-func (r *FoodRepository) SaveFood(ctx context.Context, food *models.Food) error {
-	// Get collection
-	collection := r.db.Collection("foods")
-	
-	// Check if food already exists
-	filter := bson.M{
-		"name":      food.Name,
-		"food_type": food.FoodType,
+	// Calculate how many bits we need
+	bits := max
+	bits--
+	bitLength := 0
+	for bits > 0 {
+		bits >>= 1
+		bitLength++
 	}
-	
-	count, err := collection.CountDocuments(ctx, filter)
-	if err != nil {
-		return fmt.Errorf("failed to check food existence: %w", err)
-	}
-	
-	if count > 0 {
-		return fmt.Errorf("food already exists")
-	}
-	
-	// Insert the food
-	_, err = collection.InsertOne(ctx, food)
-	if err != nil {
-		return fmt.Errorf("failed to insert food: %w", err)
-	}
-	
-	r.log.Info("Food saved",
-		zap.String("name", food.Name),
-		zap.String("type", string(food.FoodType)),
-		zap.String("created_by", food.CreatedBy))
-	
-	return nil
-}
 
-// DeleteFood marks a food as inactive
-func (r *FoodRepository) DeleteFood(ctx context.Context, name string, foodType models.FoodType) error {
-	// Get collection
-	collection := r.db.Collection("foods")
-	
-	// Create filter
-	filter := bson.M{
-		"name":      name,
-		"food_type": foodType,
-	}
-	
-	// Update the document to set is_active to false
-	update := bson.M{
-		"$set": bson.M{
-			"is_active": false,
-		},
-	}
-	
-	// Update the document
-	result, err := collection.UpdateOne(ctx, filter, update)
-	if err != nil {
-		return fmt.Errorf("failed to update food: %w", err)
-	}
-	
-	if result.MatchedCount == 0 {
-		return fmt.Errorf("food not found")
-	}
-	
-	r.log.Info("Food deleted",
-		zap.String("name", name),
-		zap.String("type", string(foodType)))
-	
-	return nil
-}
+	// Calculate the mask
+	mask := int64(1)<<uint(bitLength) - 1
 
-// CountFoods counts the number of foods of the given type
-func (r *FoodRepository) CountFoods(ctx context.Context, foodType models.FoodType) (int64, error) {
-	// Get collection
-	collection := r.db.Collection("foods")
-	
-	// Create filter
-	filter := bson.M{
-		"food_type": foodType,
-		"is_active": true,
-	}
-	
-	// Count documents
-	count, err := collection.CountDocuments(ctx, filter)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count foods: %w", err)
-	}
-	
-	return count, nil
-}
+	// Generate random numbers until we get one in range
+	var randomInt64 int64
+	var buf [8]byte
 
-// SearchFoods searches for foods by name
-func (r *FoodRepository) SearchFoods(ctx context.Context, query string, foodType models.FoodType) ([]models.Food, error) {
-	// Get collection
-	collection := r.db.Collection("foods")
-	
-	// Create filter for active foods with name containing query
-	filter := bson.M{
-		"name": bson.M{
-			"$regex":   query,
-			"$options": "i", // case-insensitive
-		},
-		"food_type": foodType,
-		"is_active": true,
+	for {
+		_, err := rand.Read(buf[:])
+		if err != nil {
+			return 0, err
+		}
+
+		// Convert bytes to int64 and apply mask
+		randomInt64 = int64(binary.BigEndian.Uint64(buf[:])) & mask
+
+		// Check if the number is in range
+		if randomInt64 < max {
+			return randomInt64, nil
+		}
 	}
-	
-	// Find all matching foods
-	cursor, err := collection.Find(ctx, filter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find foods: %w", err)
-	}
-	defer cursor.Close(ctx)
-	
-	// Decode foods
-	var foods []models.Food
-	if err := cursor.All(ctx, &foods); err != nil {
-		return nil, fmt.Errorf("failed to decode foods: %w", err)
-	}
-	
-	return foods, nil
 }

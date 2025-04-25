@@ -71,15 +71,15 @@ func New(cfg *config.Config, log *zap.Logger) (*Crawler, error) {
 }
 
 // Run runs the crawler once
+// Fix for the race condition in the Run method
 func (c *Crawler) Run(ctx context.Context) error {
 	c.log.Info("Starting crawler run")
 	
 	// Create WaitGroup for parallelization
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 	
-	// Channel for products
-	productChan := make(chan models.Product, 100)
+	// Channel for products with sufficient buffer
+	productChan := make(chan models.Product, 1000)
 	
 	// Crawl all sources in parallel
 	for _, src := range c.sources {
@@ -100,12 +100,16 @@ func (c *Crawler) Run(ctx context.Context) error {
 				zap.String("source", source.Name()), 
 				zap.Int("products", len(products)))
 			
-			// Send products to channel
-			mu.Lock()
+			// Send products to channel without mutex
 			for _, product := range products {
-				productChan <- product
+				select {
+				case productChan <- product:
+					// Successfully sent product to channel
+				case <-ctx.Done():
+					// Context cancelled, stop sending
+					return
+				}
 			}
-			mu.Unlock()
 			
 		}(src)
 	}
@@ -124,39 +128,44 @@ func (c *Crawler) Run(ctx context.Context) error {
 	
 	// Process each product
 	for product := range productChan {
-		// Check if product already exists
-		var count int64
-		filter := map[string]interface{}{
-			"url": product.URL,
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Check if product already exists
+			var count int64
+			filter := map[string]interface{}{
+				"url": product.URL,
+			}
+			
+			count, err := collection.CountDocuments(ctx, filter)
+			if err != nil {
+				c.log.Error("Failed to check product existence", 
+					zap.Error(err), 
+					zap.String("url", product.URL))
+				continue
+			}
+			
+			if count > 0 {
+				c.log.Debug("Product already exists", zap.String("url", product.URL))
+				continue
+			}
+			
+			// Insert new product
+			_, err = collection.InsertOne(ctx, product)
+			if err != nil {
+				c.log.Error("Failed to insert product", 
+					zap.Error(err), 
+					zap.String("title", product.Title))
+				continue
+			}
+			
+			c.log.Info("New product found", 
+				zap.String("title", product.Title), 
+				zap.String("source", product.Source))
+			
+			newProducts = append(newProducts, product)
 		}
-		
-		count, err := collection.CountDocuments(ctx, filter)
-		if err != nil {
-			c.log.Error("Failed to check product existence", 
-				zap.Error(err), 
-				zap.String("url", product.URL))
-			continue
-		}
-		
-		if count > 0 {
-			c.log.Debug("Product already exists", zap.String("url", product.URL))
-			continue
-		}
-		
-		// Insert new product
-		_, err = collection.InsertOne(ctx, product)
-		if err != nil {
-			c.log.Error("Failed to insert product", 
-				zap.Error(err), 
-				zap.String("title", product.Title))
-			continue
-		}
-		
-		c.log.Info("New product found", 
-			zap.String("title", product.Title), 
-			zap.String("source", product.Source))
-		
-		newProducts = append(newProducts, product)
 	}
 	
 	// Send notifications for new products

@@ -45,9 +45,9 @@ func (c *AlertCommand) Execute(s *discordgo.Session, m *discordgo.MessageCreate,
 // Help implements the Command interface
 func (c *AlertCommand) Help() string {
 	return fmt.Sprintf("**Alert Command Usage**\n"+
-		"%salert add [keyword] - Add a keyword alert\n"+
-		"%salert remove [keyword] - Remove a keyword alert\n"+
-		"%salert list - List all your keyword alerts", 
+		"%s alert add [keyword] - Add a keyword alert\n"+
+		"%s alert remove [keyword] - Remove a keyword alert\n"+
+		"%s alert list - List all your keyword alerts", 
 		c.prefix, c.prefix, c.prefix)
 }
 
@@ -65,6 +65,10 @@ func (c *AlertCommand) handleAddAlertFromArgs(s *discordgo.Session, m *discordgo
 	
 	keyword := strings.Join(args, " ")
 	
+	// Create timeout context for database operations
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
 	// 데이터베이스에 알림 생성
 	alert := models.KeywordAlert{
 		Keyword:   keyword,
@@ -77,7 +81,7 @@ func (c *AlertCommand) handleAddAlertFromArgs(s *discordgo.Session, m *discordgo
 	}
 
 	// 알림이 이미 존재하는지 확인
-	exists, err := c.checkAlertExists(m.Author.ID, keyword)
+	exists, err := c.checkAlertExists(ctx, m.Author.ID, keyword)
 	if err != nil {
 		c.log.Error("알림 존재 여부 확인 실패", zap.Error(err))
 		s.ChannelMessageSend(m.ChannelID, "알림 존재 여부를 확인하는 중 오류가 발생했습니다.")
@@ -91,7 +95,7 @@ func (c *AlertCommand) handleAddAlertFromArgs(s *discordgo.Session, m *discordgo
 
 	// 알림 삽입
 	collection := c.db.Collection("keyword_alerts")
-	_, err = collection.InsertOne(context.Background(), alert)
+	_, err = collection.InsertOne(ctx, alert)
 	if err != nil {
 		c.log.Error("알림 삽입 실패", zap.Error(err))
 		s.ChannelMessageSend(m.ChannelID, "알림을 추가하는 중 오류가 발생했습니다.")
@@ -125,6 +129,10 @@ func (c *AlertCommand) handleRemoveAlertFromArgs(s *discordgo.Session, m *discor
 	
 	keyword := strings.Join(args, " ")
 
+	// Create timeout context for database operations
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	// 데이터베이스에서 알림 삭제
 	collection := c.db.Collection("keyword_alerts")
 	filter := bson.M{
@@ -132,7 +140,7 @@ func (c *AlertCommand) handleRemoveAlertFromArgs(s *discordgo.Session, m *discor
 		"keyword": keyword,
 	}
 
-	result, err := collection.DeleteOne(context.Background(), filter)
+	result, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
 		c.log.Error("알림 삭제 실패", zap.Error(err))
 		s.ChannelMessageSend(m.ChannelID, "알림을 삭제하는 중 오류가 발생했습니다.")
@@ -163,6 +171,10 @@ func (c *AlertCommand) handleRemoveAlertFromArgs(s *discordgo.Session, m *discor
 
 // handleListAlertsFromArgs processes alert list command from parsed arguments
 func (c *AlertCommand) handleListAlertsFromArgs(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+	// Create timeout context for database operations
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
 	// 데이터베이스에서 알림 목록 가져오기
 	collection := c.db.Collection("keyword_alerts")
 	filter := bson.M{
@@ -170,16 +182,16 @@ func (c *AlertCommand) handleListAlertsFromArgs(s *discordgo.Session, m *discord
 		"is_active": true,
 	}
 
-	cursor, err := collection.Find(context.Background(), filter)
+	cursor, err := collection.Find(ctx, filter)
 	if err != nil {
 		c.log.Error("알림 목록 조회 실패", zap.Error(err))
 		s.ChannelMessageSend(m.ChannelID, "알림 목록을 조회하는 중 오류가 발생했습니다.")
 		return
 	}
-	defer cursor.Close(context.Background())
+	defer cursor.Close(ctx)
 
 	var alerts []models.KeywordAlert
-	if err := cursor.All(context.Background(), &alerts); err != nil {
+	if err := cursor.All(ctx, &alerts); err != nil {
 		c.log.Error("알림 디코딩 실패", zap.Error(err))
 		s.ChannelMessageSend(m.ChannelID, "알림 정보를 디코딩하는 중 오류가 발생했습니다.")
 		return
@@ -215,22 +227,8 @@ func (c *AlertCommand) handleListAlertsFromArgs(s *discordgo.Session, m *discord
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
 }
 
-// NewAlertCommand는 새로운 알림 명령어 핸들러를 생성합니다
-func NewAlertCommand(log *zap.Logger, db *storage.MongoDB, prefix string) *AlertCommand {
-	return &AlertCommand{
-		log:    log.Named("alert-command"),
-		db:     db,
-		prefix: prefix,
-	}
-}
-
-// Register는 더 이상 사용되지 않습니다. 대신 Command 인터페이스를 통해 명령어가 처리됩니다.
-func (c *AlertCommand) Register(session *discordgo.Session) {
-	// 빈 구현 - 하위 호환성 유지용
-}
-
 // checkAlertExists는 사용자 ID와 키워드로 알림이 존재하는지 확인합니다
-func (c *AlertCommand) checkAlertExists(userID, keyword string) (bool, error) {
+func (c *AlertCommand) checkAlertExists(ctx context.Context, userID, keyword string) (bool, error) {
 	collection := c.db.Collection("keyword_alerts")
 	filter := bson.M{
 		"user_id": userID,
@@ -238,7 +236,7 @@ func (c *AlertCommand) checkAlertExists(userID, keyword string) (bool, error) {
 		"is_active": true,
 	}
 
-	count, err := collection.CountDocuments(context.Background(), filter)
+	count, err := collection.CountDocuments(ctx, filter)
 	if err != nil {
 		return false, err
 	}

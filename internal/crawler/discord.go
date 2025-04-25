@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/bradykim7/gbot/internal/models"
@@ -130,10 +129,22 @@ func (n *DiscordNotifier) SendProductNotifications(ctx context.Context, products
 
 	n.logger.Info("Found active alerts", zap.Int("count", len(alerts)))
 
+	// Keep track of notification failures
+	var notificationErrors []error
+	
 	// For each product, find matching alerts and send notifications
 	for _, product := range products {
 		// Check if we've already notified about this product
-		if n.isProductNotified(ctx, product.URL) {
+		isNotified, err := n.isProductNotified(ctx, product.URL)
+		if err != nil {
+			n.logger.Error("Failed to check if product was notified", 
+				zap.Error(err), 
+				zap.String("url", product.URL))
+			notificationErrors = append(notificationErrors, err)
+			continue
+		}
+		
+		if isNotified {
 			n.logger.Debug("Product already notified", zap.String("url", product.URL))
 			continue
 		}
@@ -151,17 +162,25 @@ func (n *DiscordNotifier) SendProductNotifications(ctx context.Context, products
 
 			// Send notification to each unique channel
 			sentChannels := make(map[string]bool)
+			channelErrors := make(map[string]error)
 			
 			for _, alert := range matchingAlerts {
-				if !sentChannels[alert.ChannelID] {
+				if !sentChannels[alert.ChannelID] && channelErrors[alert.ChannelID] == nil {
 					// Wait for rate limiter to avoid rate limits
-					<-n.rateLimiter.C
+					select {
+					case <-n.rateLimiter.C:
+						// Continue with send
+					case <-ctx.Done():
+						return ctx.Err()
+					}
 					
 					_, err := n.session.ChannelMessageSendEmbed(alert.ChannelID, embed)
 					if err != nil {
 						n.logger.Error("Failed to send Discord message", 
 							zap.Error(err), 
 							zap.String("channel_id", alert.ChannelID))
+						channelErrors[alert.ChannelID] = err
+						notificationErrors = append(notificationErrors, fmt.Errorf("failed to send notification to channel %s: %w", alert.ChannelID, err))
 						continue
 					}
 					
@@ -173,125 +192,40 @@ func (n *DiscordNotifier) SendProductNotifications(ctx context.Context, products
 				}
 			}
 
-			// Mark product as notified
-			n.markProductNotified(ctx, product)
+			// Only mark product as notified if at least one notification was sent
+			if len(sentChannels) > 0 {
+				if err := n.markProductNotified(ctx, product); err != nil {
+					n.logger.Error("Failed to mark product as notified", 
+						zap.Error(err), 
+						zap.String("url", product.URL))
+					notificationErrors = append(notificationErrors, err)
+				}
+			}
 		}
+	}
+
+	// Return aggregate error if there were any failures
+	if len(notificationErrors) > 0 {
+		return fmt.Errorf("encountered %d errors while sending notifications", len(notificationErrors))
 	}
 
 	return nil
 }
 
-// findMatchingAlerts returns alerts that match the given product
-func (n *DiscordNotifier) findMatchingAlerts(product models.Product, alerts []models.KeywordAlert) []models.KeywordAlert {
-	var matches []models.KeywordAlert
-	
-	for _, alert := range alerts {
-		// Check if keyword is in title (case insensitive)
-		if strings.Contains(strings.ToLower(product.Title), strings.ToLower(alert.Keyword)) {
-			matches = append(matches, alert)
-		}
-	}
-	
-	return matches
-}
-
-// createProductEmbed creates a rich embed for product notification
-func (n *DiscordNotifier) createProductEmbed(product models.Product, alerts []models.KeywordAlert) *discordgo.MessageEmbed {
-	// Collect unique keywords that matched
-	keywords := make(map[string]bool)
-	for _, alert := range alerts {
-		keywords[alert.Keyword] = true
-	}
-	
-	// Join keywords into comma-separated string
-	var keywordList []string
-	for k := range keywords {
-		keywordList = append(keywordList, k)
-	}
-	
-	// Collect unique usernames to mention
-	var usernames []string
-	mentionedUsers := make(map[string]bool)
-	for _, alert := range alerts {
-		// Check if Username is set
-		if alert.Username != "" && !mentionedUsers[alert.Username] {
-			usernames = append(usernames, "@"+alert.Username)
-			mentionedUsers[alert.Username] = true
-		} else if !mentionedUsers[alert.UserID] {
-			// Fallback to user ID if username not available
-			usernames = append(usernames, "<@"+alert.UserID+">")
-			mentionedUsers[alert.UserID] = true
-		}
-	}
-
-	// Create fields
-	fields := []*discordgo.MessageEmbedField{
-		{
-			Name:   "Source",
-			Value:  product.Source,
-			Inline: true,
-		},
-	}
-
-	// Add price field if available
-	priceStr := product.GetPriceString()
-	if priceStr != "Price unknown" {
-		fields = append(fields, &discordgo.MessageEmbedField{
-			Name:   "Price",
-			Value:  priceStr,
-			Inline: true,
-		})
-	}
-
-	// Add comments/views if available
-	if product.Comments > 0 || product.Views > 0 {
-		fields = append(fields, &discordgo.MessageEmbedField{
-			Name:   "Stats",
-			Value:  fmt.Sprintf("Comments: %d | Views: %d", product.Comments, product.Views),
-			Inline: true,
-		})
-	}
-
-	// Add matched keywords field
-	fields = append(fields, &discordgo.MessageEmbedField{
-		Name:   "Matched Keywords",
-		Value:  strings.Join(keywordList, ", "),
-		Inline: false,
-	})
-
-	// Create description with mentions
-	description := fmt.Sprintf("Found a deal matching your alert! %s", strings.Join(usernames, " "))
-
-	// Create embed
-	embed := &discordgo.MessageEmbed{
-		Title:       product.Title,
-		URL:         product.URL,
-		Description: description,
-		Color:       0x00ff00, // Green color
-		Fields:      fields,
-		Footer: &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("Crawled at %s", product.CrawledAt.Format("2006-01-02 15:04:05")),
-		},
-	}
-
-	return embed
-}
-
 // isProductNotified checks if a product has already been notified
-func (n *DiscordNotifier) isProductNotified(ctx context.Context, url string) bool {
+func (n *DiscordNotifier) isProductNotified(ctx context.Context, url string) (bool, error) {
 	collection := n.db.Collection("notified_products")
 	
 	count, err := collection.CountDocuments(ctx, bson.M{"url": url})
 	if err != nil {
-		n.logger.Error("Failed to check if product was notified", zap.Error(err), zap.String("url", url))
-		return false
+		return false, fmt.Errorf("failed to check notification status: %w", err)
 	}
 	
-	return count > 0
+	return count > 0, nil
 }
 
 // markProductNotified marks a product as notified in the database
-func (n *DiscordNotifier) markProductNotified(ctx context.Context, product models.Product) {
+func (n *DiscordNotifier) markProductNotified(ctx context.Context, product models.Product) error {
 	collection := n.db.Collection("notified_products")
 	
 	notifiedProduct := struct {
@@ -306,8 +240,10 @@ func (n *DiscordNotifier) markProductNotified(ctx context.Context, product model
 	
 	_, err := collection.InsertOne(ctx, notifiedProduct)
 	if err != nil {
-		n.logger.Error("Failed to mark product as notified", zap.Error(err), zap.String("url", product.URL))
+		return fmt.Errorf("failed to mark product as notified: %w", err)
 	}
+	
+	return nil
 }
 
 // Close cleans up resources
