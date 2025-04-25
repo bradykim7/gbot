@@ -12,10 +12,35 @@ type PingCommand struct{
 	prefix string
 }
 
+// Execute implements the Command interface
+func (c *PingCommand) Execute(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+	// 응답 시간 계산
+	start := time.Now()
+	msg, err := s.ChannelMessageSend(m.ChannelID, "Pinging...")
+	if err != nil {
+		return
+	}
+
+	elapsed := time.Since(start)
+	
+	// 지연 시간 정보로 메시지 수정
+	_, err = s.ChannelMessageEdit(m.ChannelID, msg.ID, 
+		"Pong! Latency: " + elapsed.Round(time.Millisecond).String())
+	if err != nil {
+		s.ChannelMessageSend(m.ChannelID, 
+			"Pong! Latency: " + elapsed.Round(time.Millisecond).String())
+	}
+}
+
+// Help implements the Command interface
+func (c *PingCommand) Help() string {
+	return "Responds with pong to verify the bot is running"
+}
+
 // NewPingCommand는 새로운 ping 명령어를 생성합니다
-func NewPingCommand() *PingCommand {
+func NewPingCommand(prefix string) *PingCommand {
 	return &PingCommand{
-		prefix: "!",  // 기본 접두사
+		prefix: prefix,
 	}
 }
 

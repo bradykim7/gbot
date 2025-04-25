@@ -3,8 +3,8 @@ package commands
 import (
 	"strings"
 
-	"github.com/bradykim7/gbot/pkg/logger"
 	"github.com/bwmarrin/discordgo"
+	"go.uber.org/zap"
 )
 
 // Command represents a bot command
@@ -17,22 +17,22 @@ type Command interface {
 type Registry struct {
 	prefix   string
 	commands map[string]Command
-	log      *logger.Logger
+	log      *zap.Logger
 }
 
 // NewRegistry creates a new command registry
-func NewRegistry(prefix string) *Registry {
+func NewRegistry(prefix string, log *zap.Logger) *Registry {
 	return &Registry{
 		prefix:   prefix,
 		commands: make(map[string]Command),
-		log:      logger.New("commands"),
+		log:      log.Named("commands"),
 	}
 }
 
 // Register registers a command with the registry
 func (r *Registry) Register(name string, cmd Command) {
 	r.commands[name] = cmd
-	r.log.Infof("Registered command: %s", name)
+	r.log.Info("Registered command", zap.String("name", name))
 }
 
 // Handle processes a message and executes the appropriate command
@@ -60,7 +60,7 @@ func (r *Registry) Handle(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	
 	// Execute the command
-	r.log.Infof("Executing command: %s", cmdName)
+	r.log.Info("Executing command", zap.String("command", cmdName))
 	cmd.Execute(s, m, args)
 }
 

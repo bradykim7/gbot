@@ -1,130 +1,77 @@
-# GBot - Discord Bot in Go
+# Discord Bot - Go Implementation
 
-Python으로 작성된 Discord 봇을 Go 언어로 변환한 프로젝트입니다.
+## Overview
+This repository contains a Discord bot written in Go. It has two main components:
+1. **HybaBot** - A Discord bot that handles user commands
+2. **PriceSota** - A web crawler that scans deal websites and sends notifications
 
-## 프로젝트 구조 (Project Structure)
+## Bug Fixes
+The following bugs were fixed in the latest update:
 
-```
-gbot/
-├── cmd/                      # 각 애플리케이션의 진입점
-│   ├── hybabot/              # Discord 봇 메인
-│   └── pricesota/            # 웹 크롤러 메인
-├── configs/                  # 설정 파일
-├── docker-compose.yml        # Docker Compose 설정
-├── Dockerfile.bot            # 봇용 Dockerfile
-├── Dockerfile.crawler        # 크롤러용 Dockerfile
-├── go.mod                    # Go module file
-├── go.sum                    # Go dependencies checksums
-└── internal/                 # 내부 패키지
-    ├── bot/                  # 봇 로직
-    │   ├── bot.go            # 봇 구현 메인
-    │   ├── commands/         # 명령어 핸들러
-    │   ├── handlers/         # 이벤트 핸들러
-    │   └── services/         # 비즈니스 로직 서비스
-    ├── common/               # 공통 유틸리티
-    ├── crawler/              # 웹 크롤러
-    │   ├── crawler.go        # 크롤러 구현 메인
-    │   ├── base_crawler.go   # 기본 크롤러 기능
-    │   ├── discord.go        # 크롤러용 Discord 통합
-    │   ├── parser/           # HTML 파서
-    │   └── sources/          # 소스별 크롤러
-    ├── models/               # 데이터 모델
-    │   ├── keyword_alert.go  # 알림 모델
-    │   ├── product.go        # 상품 모델
-    │   └── food.go           # 음식 추천 모델
-    └── storage/              # 데이터 저장소
-        ├── mongodb.go        # MongoDB 연결
-        ├── food_repository.go # 음식 저장소
-        └── ...               # 기타 저장소
-```
+1. **Command Registry**:
+   - Fixed inconsistency between direct handler registration and command registry pattern
+   - Implemented the Command interface properly for all commands
+   - Removed redundant command handlers
 
-## 기능 (Features)
+2. **Logger Consistency**:
+   - Fixed inconsistent logger usage between zap.Logger and custom logger
+   - Improved error handling in logger initialization
+   - Added better context to log messages
 
-1. Discord Bot (`hybabot`)
-   - 접두사를 사용한 명령어 처리
-   - 상품 딜에 대한 알림 시스템
-   - 음식 추천 시스템
-   - 테스트용 ping 명령어
+3. **Model Structure**:
+   - Added missing Username field to KeywordAlert model
+   - Fixed inconsistencies in data structures
+   - Enhanced Product model with additional fields needed for notifications
 
-2. Web Crawler (`pricesota`)
-   - 상품 정보를 위한 딜 웹사이트 크롤링
-   - 사용자 키워드 기반 Discord 알림 전송
-   - 다양한 소스 지원 (Ppomppu, Quasarzone)
+4. **Command Processing**:
+   - Improved command argument parsing
+   - Added better help messages and error responses
+   - Fixed prefix handling in ping command
+   
+5. **Crawler Improvements**:
+   - Fixed product data collection in PpomppuCrawler
+   - Added proper price string handling
+   - Improved user notification to handle missing usernames
+   - Added fallback to user ID mentions when usernames are not available
+   
+6. **Discord Bot Notifications**:
+   - Fixed price display in product notifications
+   - Improved error handling in notification sending
+   - Added proper formatting of timestamps
 
-## 명령어 목록 (Command List)
+## Features
+- **Commands**:
+  - `!ping` - Check bot latency
+  - `!alert add [keyword]` - Add a keyword alert
+  - `!alert remove [keyword]` - Remove a keyword alert
+  - `!alert list` - List all your keyword alerts
+  - `!food lunch` - Get a random lunch recommendation
+  - `!food dinner` - Get a random dinner recommendation
+  - `!food list [lunch/dinner]` - List all foods
+  - `!food add [lunch/dinner] [name]` - Add a food
+  - `!food remove [lunch/dinner] [name]` - Remove a food
 
-- `!ping` - 봇 응답 시간 테스트
-- `!alert add <keyword>` - 키워드 알림 추가
-- `!alert remove <keyword>` - 키워드 알림 삭제
-- `!alert list` - 알림 목록 보기
-- `!점메추` - 랜덤 점심 메뉴 추천
-- `!저메추` - 랜덤 저녁 메뉴 추천
-- `!메뉴` - 모든 음식 옵션 목록
-- `!점메추등록 <food>` - 점심 메뉴 등록
-- `!저메추등록 <food>` - 저녁 메뉴 등록
-- `!점메추삭제 <food>` - 점심 메뉴 삭제
-- `!저메추삭제 <food>` - 저녁 메뉴 삭제
+## Setup
+1. Clone the repository
+2. Create a .env file with your Discord token and MongoDB URI
+3. Run `go build ./cmd/hybabot` to build the bot
+4. Run `go build ./cmd/pricesota` to build the crawler
 
-## 봇 실행하기 (Running the Bot)
+## Configuration
+The following environment variables are used:
+- `DISCORD_TOKEN` - Your Discord bot token
+- `DISCORD_GUILD` - Your Discord guild ID (optional)
+- `COMMAND_PREFIX` - Command prefix (default: !)
+- `MONGODB_URI` - MongoDB connection URI
+- `PRODUCT_CHANNEL_ID` - Channel ID for product notifications
 
-### 요구사항 (Requirements)
-
-- Go 1.21+
-- MongoDB
-- Discord Bot Token
-
-### 환경 변수 (Environment Variables)
-
-루트 디렉토리에 다음 변수를 포함한 `.env` 파일을 생성하세요:
-
-```
-DISCORD_TOKEN=your_discord_bot_token
-MONGODB_URI=mongodb://localhost:27017
-MONGODB_NAME=discord_bot
-COMMAND_PREFIX=!
-```
-
-### 빌드 및 실행 (Building and Running)
-
-```bash
-# 봇 빌드
-go build -o bin/bot ./cmd/hybabot
-
-# 봇 실행
-./bin/bot
-
-# 크롤러 빌드
-go build -o bin/crawler ./cmd/pricesota
-
-# 크롤러 실행
-./bin/crawler
-```
-
-### Docker
-
-```bash
-# 봇 빌드 및 실행
-docker build -f Dockerfile.bot -t gbot/bot .
-docker run --env-file .env gbot/bot
-
-# 크롤러 빌드 및 실행
-docker build -f Dockerfile.crawler -t gbot/crawler .
-docker run --env-file .env gbot/crawler
-
-# Docker Compose 사용
-docker-compose up
-```
-
-## 개발 (Development)
-
-### 새 명령어 추가하기 (Adding New Commands)
-
-1. `internal/bot/commands/`에 새 파일 생성
-2. `ping_command.go`의 패턴을 따라 명령어 핸들러 구현
-3. `bot.go`에 명령어 등록
-
-### 새 크롤러 소스 추가하기 (Adding New Crawler Sources)
-
-1. `internal/crawler/sources/`에 새 파일 생성
-2. `Source` 인터페이스 구현
-3. `crawler.go`의 소스 목록에 추가
+## Korean Commands
+모든 명령어는 한국어로도 사용할 수 있습니다:
+- `!알림 추가 [키워드]` - 키워드 알림 추가
+- `!알림 삭제 [키워드]` - 키워드 알림 삭제
+- `!알림 목록` - 모든 키워드 알림 보기
+- `!메뉴 점심` - 점심 추천 받기
+- `!메뉴 저녁` - 저녁 추천 받기
+- `!메뉴 목록 [점심/저녁]` - 모든 메뉴 보기
+- `!메뉴 추가 [점심/저녁] [이름]` - 메뉴 추가
+- `!메뉴 삭제 [점심/저녁] [이름]` - 메뉴 삭제

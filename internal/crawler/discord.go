@@ -12,7 +12,6 @@ import (
 	"github.com/bradykim7/gbot/internal/models"
 	"github.com/bradykim7/gbot/internal/storage"
 	"github.com/bradykim7/gbot/pkg/config"
-	"github.com/bradykim7/gbot/pkg/logger"
 	"github.com/bwmarrin/discordgo"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.uber.org/zap"
@@ -22,16 +21,17 @@ import (
 type DiscordClient struct {
 	token     string
 	channelID string
-	log       *logger.Logger
+	log       *zap.Logger
 	client    *http.Client
 }
 
 // NewDiscordClient creates a new Discord client
 func NewDiscordClient(token, channelID string) (*DiscordClient, error) {
+	logger, _ := zap.NewProduction()
 	return &DiscordClient{
 		token:     token,
 		channelID: channelID,
-		log:       logger.New("discord_client"),
+		log:       logger.Named("discord_client"),
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -74,7 +74,7 @@ func (c *DiscordClient) SendMessage(content string) error {
 		return fmt.Errorf("failed to send message, status code: %d", resp.StatusCode)
 	}
 	
-	c.log.Info("Message sent successfully to Discord")
+	c.log.Info("Message sent successfully to Discord", zap.String("channel", c.channelID))
 	return nil
 }
 
@@ -213,9 +213,14 @@ func (n *DiscordNotifier) createProductEmbed(product models.Product, alerts []mo
 	var usernames []string
 	mentionedUsers := make(map[string]bool)
 	for _, alert := range alerts {
-		if !mentionedUsers[alert.Username] {
+		// Check if Username is set
+		if alert.Username != "" && !mentionedUsers[alert.Username] {
 			usernames = append(usernames, "@"+alert.Username)
 			mentionedUsers[alert.Username] = true
+		} else if !mentionedUsers[alert.UserID] {
+			// Fallback to user ID if username not available
+			usernames = append(usernames, "<@"+alert.UserID+">")
+			mentionedUsers[alert.UserID] = true
 		}
 	}
 
@@ -229,10 +234,11 @@ func (n *DiscordNotifier) createProductEmbed(product models.Product, alerts []mo
 	}
 
 	// Add price field if available
-	if product.PriceString != "" {
+	priceStr := product.GetPriceString()
+	if priceStr != "Price unknown" {
 		fields = append(fields, &discordgo.MessageEmbedField{
 			Name:   "Price",
-			Value:  fmt.Sprintf("%s원", product.PriceString),
+			Value:  priceStr,
 			Inline: true,
 		})
 	}

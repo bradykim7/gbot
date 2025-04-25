@@ -8,7 +8,6 @@ import (
 
 	"github.com/bradykim7/gbot/internal/models"
 	"github.com/bradykim7/gbot/internal/storage"
-	"github.com/bradykim7/gbot/pkg/logger"
 	"github.com/bwmarrin/discordgo"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.uber.org/zap"
@@ -21,44 +20,51 @@ type AlertCommand struct {
 	prefix string
 }
 
-// NewAlertCommand는 새로운 알림 명령어 핸들러를 생성합니다
-func NewAlertCommand(log *zap.Logger, db *storage.MongoDB, prefix string) *AlertCommand {
-	return &AlertCommand{
-		log:    log.Named("alert-command"),
-		db:     db,
-		prefix: prefix,
-	}
-}
-
-// Register는 명령어 핸들러를 등록합니다
-func (c *AlertCommand) Register(session *discordgo.Session) {
-	session.AddHandler(c.handleAddAlert)
-	session.AddHandler(c.handleRemoveAlert)
-	session.AddHandler(c.handleListAlerts)
-}
-
-// handleAddAlert는 알림 추가 명령어를 처리합니다
-func (c *AlertCommand) handleAddAlert(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// 봇 자신의 메시지는 무시
-	if m.Author.ID == s.State.User.ID {
+// Execute implements the Command interface
+func (c *AlertCommand) Execute(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+	if len(args) == 0 {
+		c.sendHelpMessage(s, m.ChannelID)
 		return
 	}
 
-	// 명령어가 alert add인지 확인
-	prefix := c.prefix + "alert add "
-	if !strings.HasPrefix(m.Content, prefix) {
-		return
+	subCommand := args[0]
+	args = args[1:]
+
+	switch subCommand {
+	case "add", "추가":
+		c.handleAddAlertFromArgs(s, m, args)
+	case "remove", "삭제":
+		c.handleRemoveAlertFromArgs(s, m, args)
+	case "list", "목록":
+		c.handleListAlertsFromArgs(s, m, args)
+	default:
+		c.sendHelpMessage(s, m.ChannelID)
 	}
+}
 
-	// 키워드 추출
-	keyword := strings.TrimPrefix(m.Content, prefix)
-	keyword = strings.TrimSpace(keyword)
+// Help implements the Command interface
+func (c *AlertCommand) Help() string {
+	return fmt.Sprintf("**Alert Command Usage**\n"+
+		"%salert add [keyword] - Add a keyword alert\n"+
+		"%salert remove [keyword] - Remove a keyword alert\n"+
+		"%salert list - List all your keyword alerts", 
+		c.prefix, c.prefix, c.prefix)
+}
 
-	if keyword == "" {
+// sendHelpMessage sends the help message to the specified channel
+func (c *AlertCommand) sendHelpMessage(s *discordgo.Session, channelID string) {
+	s.ChannelMessageSend(channelID, c.Help())
+}
+
+// handleAddAlertFromArgs processes alert add command from parsed arguments
+func (c *AlertCommand) handleAddAlertFromArgs(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+	if len(args) == 0 {
 		s.ChannelMessageSend(m.ChannelID, "추가할 키워드를 입력해주세요.")
 		return
 	}
-
+	
+	keyword := strings.Join(args, " ")
+	
 	// 데이터베이스에 알림 생성
 	alert := models.KeywordAlert{
 		Keyword:   keyword,
@@ -66,7 +72,7 @@ func (c *AlertCommand) handleAddAlert(s *discordgo.Session, m *discordgo.Message
 		Username:  m.Author.Username,
 		ChannelID: m.ChannelID,
 		GuildID:   m.GuildID,
-		CreatedAt: time.Now(),
+		CreatedAt: time.Now().Unix(),
 		IsActive:  true,
 	}
 
@@ -110,27 +116,14 @@ func (c *AlertCommand) handleAddAlert(s *discordgo.Session, m *discordgo.Message
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
 }
 
-// handleRemoveAlert는 알림 삭제 명령어를 처리합니다
-func (c *AlertCommand) handleRemoveAlert(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// 봇 자신의 메시지는 무시
-	if m.Author.ID == s.State.User.ID {
-		return
-	}
-
-	// 명령어가 alert remove인지 확인
-	prefix := c.prefix + "alert remove "
-	if !strings.HasPrefix(m.Content, prefix) {
-		return
-	}
-
-	// 키워드 추출
-	keyword := strings.TrimPrefix(m.Content, prefix)
-	keyword = strings.TrimSpace(keyword)
-
-	if keyword == "" {
+// handleRemoveAlertFromArgs processes alert remove command from parsed arguments
+func (c *AlertCommand) handleRemoveAlertFromArgs(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+	if len(args) == 0 {
 		s.ChannelMessageSend(m.ChannelID, "삭제할 키워드를 입력해주세요.")
 		return
 	}
+	
+	keyword := strings.Join(args, " ")
 
 	// 데이터베이스에서 알림 삭제
 	collection := c.db.Collection("keyword_alerts")
@@ -168,19 +161,8 @@ func (c *AlertCommand) handleRemoveAlert(s *discordgo.Session, m *discordgo.Mess
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
 }
 
-// handleListAlerts는 알림 목록 명령어를 처리합니다
-func (c *AlertCommand) handleListAlerts(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// 봇 자신의 메시지는 무시
-	if m.Author.ID == s.State.User.ID {
-		return
-	}
-
-	// 명령어가 alert list인지 확인
-	prefix := c.prefix + "alert list"
-	if !strings.HasPrefix(m.Content, prefix) {
-		return
-	}
-
+// handleListAlertsFromArgs processes alert list command from parsed arguments
+func (c *AlertCommand) handleListAlertsFromArgs(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
 	// 데이터베이스에서 알림 목록 가져오기
 	collection := c.db.Collection("keyword_alerts")
 	filter := bson.M{
@@ -231,6 +213,20 @@ func (c *AlertCommand) handleListAlerts(s *discordgo.Session, m *discordgo.Messa
 		zap.String("user_id", m.Author.ID), 
 		zap.Int("count", len(alerts)))
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
+}
+
+// NewAlertCommand는 새로운 알림 명령어 핸들러를 생성합니다
+func NewAlertCommand(log *zap.Logger, db *storage.MongoDB, prefix string) *AlertCommand {
+	return &AlertCommand{
+		log:    log.Named("alert-command"),
+		db:     db,
+		prefix: prefix,
+	}
+}
+
+// Register는 더 이상 사용되지 않습니다. 대신 Command 인터페이스를 통해 명령어가 처리됩니다.
+func (c *AlertCommand) Register(session *discordgo.Session) {
+	// 빈 구현 - 하위 호환성 유지용
 }
 
 // checkAlertExists는 사용자 ID와 키워드로 알림이 존재하는지 확인합니다

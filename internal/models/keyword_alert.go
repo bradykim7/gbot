@@ -9,6 +9,7 @@ type KeywordAlert struct {
 	ID        string `bson:"_id,omitempty"`
 	Keyword   string `bson:"keyword"`
 	UserID    string `bson:"user_id"`
+	Username  string `bson:"username"`
 	ChannelID string `bson:"channel_id"`
 	GuildID   string `bson:"guild_id"`
 	CreatedAt int64  `bson:"created_at"`

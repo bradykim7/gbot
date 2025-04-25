@@ -41,27 +41,31 @@ func New(name string) *Logger {
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
-	// Create file core
-	fileWriter, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Printf("Error opening log file: %v\n", err)
-	}
-
-	fileCore := zapcore.NewCore(
-		zapcore.NewJSONEncoder(encoderConfig),
-		zapcore.AddSync(fileWriter),
-		zap.InfoLevel,
-	)
-
+	// Create file core and console core
+	var core zapcore.Core
+	
 	// Create console core
 	consoleCore := zapcore.NewCore(
 		zapcore.NewConsoleEncoder(encoderConfig),
 		zapcore.AddSync(os.Stdout),
 		zap.InfoLevel,
 	)
-
-	// Combine cores
-	core := zapcore.NewTee(fileCore, consoleCore)
+	
+	// Create file core
+	fileWriter, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error opening log file: %v\n", err)
+		// Use only console core if file opening fails
+		core = consoleCore
+	} else {
+		fileCore := zapcore.NewCore(
+			zapcore.NewJSONEncoder(encoderConfig),
+			zapcore.AddSync(fileWriter),
+			zap.InfoLevel,
+		)
+		// Combine cores only if file opening succeeds
+		core = zapcore.NewTee(fileCore, consoleCore)
+	}
 
 	// Create logger
 	logger := zap.New(core).Named(name)

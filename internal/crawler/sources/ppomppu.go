@@ -119,15 +119,21 @@ func (c *PpomppuCrawler) parseProduct(s *goquery.Selection) (*models.Product, er
 	// Get date
 	dateStr := strings.TrimSpace(s.Find("td").Eq(4).Text())
 	
+	now := time.Now()
+	
 	return &models.Product{
 		Title:        title,
 		URL:          url,
-		Price:        price,
-		PriceString:  priceStr,
+		KOPrice:      price,
+		PriceString:  priceStr + "원",
+		UploadDate:   now.Unix(),
+		UploadSite:   "Ppomppu",
+		Product:      title,
+		Website:      "Ppomppu",
 		Source:       "Ppomppu",
 		Comments:     comments,
 		Views:        views,
-		DateStr:      dateStr,
-		CrawledAt:    time.Now(),
+		CrawledAt:    now,
+		Category:     "Deal",
 	}, nil
 }

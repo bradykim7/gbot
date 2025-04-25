@@ -9,7 +9,6 @@ import (
 	"github.com/bradykim7/gbot/internal/models"
 	"github.com/bradykim7/gbot/internal/storage"
 	"github.com/bradykim7/gbot/pkg/config"
-	"github.com/bradykim7/gbot/pkg/logger"
 	"go.uber.org/zap"
 )
 

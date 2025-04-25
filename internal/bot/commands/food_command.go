@@ -20,55 +20,68 @@ type FoodCommand struct {
 	repo     *storage.FoodRepository
 }
 
-// NewFoodCommand는 새로운 음식 명령어 핸들러를 생성합니다
-func NewFoodCommand(log *zap.Logger, db *storage.MongoDB, prefix string) *FoodCommand {
-	return &FoodCommand{
-		log:      log.Named("food-command"),
-		db:       db,
-		prefix:   prefix,
-		repo:     storage.NewFoodRepository(db, log),
-	}
-}
-
-// Register는 음식 명령어 핸들러를 등록합니다
-func (c *FoodCommand) Register(session *discordgo.Session) {
-	session.AddHandler(c.handleLunchRecommend)
-	session.AddHandler(c.handleDinnerRecommend)
-	session.AddHandler(c.handleListFood)
-	session.AddHandler(c.handleRegisterFood)
-	session.AddHandler(c.handleDeleteFood)
-}
-
-// handleLunchRecommend는 점심 추천 명령어(점메추)를 처리합니다
-func (c *FoodCommand) handleLunchRecommend(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// 봇 자신의 메시지는 무시
-	if m.Author.ID == s.State.User.ID {
+// Execute implements the Command interface
+func (c *FoodCommand) Execute(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+	if len(args) == 0 {
+		c.sendHelpMessage(s, m.ChannelID)
 		return
 	}
 
-	// 명령어가 점메추인지 확인
-	if m.Content != c.prefix+"점메추" {
-		return
-	}
+	subCommand := args[0]
+	args = args[1:]
 
+	switch subCommand {
+	case "lunch", "점심":
+		c.handleLunchRecommendArgs(s, m, args)
+	case "dinner", "저녁":
+		c.handleDinnerRecommendArgs(s, m, args)
+	case "list", "목록":
+		c.handleListFoodArgs(s, m, args)
+	case "add", "추가":
+		c.handleRegisterFoodArgs(s, m, args)
+	case "remove", "삭제":
+		c.handleDeleteFoodArgs(s, m, args)
+	default:
+		c.sendHelpMessage(s, m.ChannelID)
+	}
+}
+
+// Help implements the Command interface
+func (c *FoodCommand) Help() string {
+	return fmt.Sprintf("**Food Command Usage**\n"+
+		"%sfood lunch/점심 - Get lunch recommendation\n"+
+		"%sfood dinner/저녁 - Get dinner recommendation\n"+
+		"%sfood list/목록 [lunch/dinner] - List all registered food\n"+
+		"%sfood add/추가 [lunch/dinner] [name] - Add new food\n"+
+		"%sfood remove/삭제 [lunch/dinner] [name] - Remove food",
+		c.prefix, c.prefix, c.prefix, c.prefix, c.prefix)
+}
+
+// sendHelpMessage sends the help message to the specified channel
+func (c *FoodCommand) sendHelpMessage(s *discordgo.Session, channelID string) {
+	s.ChannelMessageSend(channelID, c.Help())
+}
+
+// handleLunchRecommendArgs handles the lunch recommendation with arguments
+func (c *FoodCommand) handleLunchRecommendArgs(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// 랜덤 점심 음식 가져오기
+	// Get random lunch food
 	food, err := c.repo.GetRandomFood(ctx, models.FoodTypeLunch)
 	if err != nil {
-		c.log.Error("랜덤 점심 음식 가져오기 실패", zap.Error(err))
+		c.log.Error("Failed to get random lunch food", zap.Error(err))
 		s.ChannelMessageSend(m.ChannelID, "점심 추천을 가져오는 중 오류가 발생했습니다.")
 		return
 	}
 
-	// 임베드 생성
+	// Create embed
 	embed := &discordgo.MessageEmbed{
 		Title:       "오늘의 점심 메뉴 추천",
 		Description: fmt.Sprintf("오늘 점심은 **%s** 어떠세요?", food.Name),
-		Color:       0xFF9900, // 주황색
+		Color:       0xFF9900, // Orange
 		Footer: &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("요청자: %s", m.Author.Username),
+			Text: fmt.Sprintf("Requested by %s", m.Author.Username),
 		},
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
@@ -76,18 +89,8 @@ func (c *FoodCommand) handleLunchRecommend(s *discordgo.Session, m *discordgo.Me
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
 }
 
-// handleDinnerRecommend handles the dinner recommendation command (저메추)
-func (c *FoodCommand) handleDinnerRecommend(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Ignore messages from the bot itself
-	if m.Author.ID == s.State.User.ID {
-		return
-	}
-
-	// Check if command is 저메추
-	if m.Content != c.prefix+"저메추" {
-		return
-	}
-
+// handleDinnerRecommendArgs handles the dinner recommendation with arguments
+func (c *FoodCommand) handleDinnerRecommendArgs(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -113,34 +116,31 @@ func (c *FoodCommand) handleDinnerRecommend(s *discordgo.Session, m *discordgo.M
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
 }
 
-// handleListFood handles the food list command (메뉴)
-func (c *FoodCommand) handleListFood(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Ignore messages from the bot itself
-	if m.Author.ID == s.State.User.ID {
-		return
-	}
-
-	// Check if command starts with 메뉴
-	if !strings.HasPrefix(m.Content, c.prefix+"메뉴") {
-		return
-	}
-
+// handleListFoodArgs handles listing food with arguments
+func (c *FoodCommand) handleListFoodArgs(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	parts := strings.Fields(m.Content)
 	var foodType models.FoodType
 	var title string
 
-	// Determine food type from command args
-	if len(parts) > 1 && parts[1] == "점심" {
-		foodType = models.FoodTypeLunch
-		title = "점심 메뉴 목록"
-	} else if len(parts) > 1 && parts[1] == "저녁" {
-		foodType = models.FoodTypeDinner
-		title = "저녁 메뉴 목록"
-	} else {
-		// Default to listing all food types
+	// Determine food type from arguments
+	if len(args) > 0 {
+		switch args[0] {
+		case "lunch", "점심":
+			foodType = models.FoodTypeLunch
+			title = "점심 메뉴 목록"
+		case "dinner", "저녁":
+			foodType = models.FoodTypeDinner
+			title = "저녁 메뉴 목록"
+		default:
+			// Default to showing both lists
+			foodType = ""
+		}
+	}
+
+	// If no food type specified, show both lists
+	if foodType == "" {
 		var lunchMsg, dinnerMsg string
 
 		// Get lunch foods
@@ -210,29 +210,28 @@ func (c *FoodCommand) handleListFood(s *discordgo.Session, m *discordgo.MessageC
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
 }
 
-// handleRegisterFood handles the food registration command (점메추등록/저메추등록)
-func (c *FoodCommand) handleRegisterFood(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Ignore messages from the bot itself
-	if m.Author.ID == s.State.User.ID {
+// handleRegisterFoodArgs handles food registration with arguments
+func (c *FoodCommand) handleRegisterFoodArgs(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+	if len(args) < 2 {
+		s.ChannelMessageSend(m.ChannelID, "사용법: "+c.prefix+"food add [lunch/dinner] [food name]")
 		return
 	}
 
-	// Check command type
 	var foodType models.FoodType
-	var prefix string
+	typeArg := args[0]
+	foodName := strings.Join(args[1:], " ")
 
-	if strings.HasPrefix(m.Content, c.prefix+"점메추등록") {
+	// Determine food type
+	switch typeArg {
+	case "lunch", "점심":
 		foodType = models.FoodTypeLunch
-		prefix = c.prefix + "점메추등록"
-	} else if strings.HasPrefix(m.Content, c.prefix+"저메추등록") {
+	case "dinner", "저녁":
 		foodType = models.FoodTypeDinner
-		prefix = c.prefix + "저메추등록"
-	} else {
+	default:
+		s.ChannelMessageSend(m.ChannelID, "유효한 메뉴 유형(lunch/점심 또는 dinner/저녁)을 입력해주세요.")
 		return
 	}
 
-	// Extract food name
-	foodName := strings.TrimSpace(strings.TrimPrefix(m.Content, prefix))
 	if foodName == "" {
 		s.ChannelMessageSend(m.ChannelID, "등록할 메뉴 이름을 입력해주세요.")
 		return
@@ -275,29 +274,28 @@ func (c *FoodCommand) handleRegisterFood(s *discordgo.Session, m *discordgo.Mess
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
 }
 
-// handleDeleteFood handles the food deletion command (점메추삭제/저메추삭제)
-func (c *FoodCommand) handleDeleteFood(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Ignore messages from the bot itself
-	if m.Author.ID == s.State.User.ID {
+// handleDeleteFoodArgs handles food deletion with arguments
+func (c *FoodCommand) handleDeleteFoodArgs(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+	if len(args) < 2 {
+		s.ChannelMessageSend(m.ChannelID, "사용법: "+c.prefix+"food remove [lunch/dinner] [food name]")
 		return
 	}
 
-	// Check command type
 	var foodType models.FoodType
-	var prefix string
+	typeArg := args[0]
+	foodName := strings.Join(args[1:], " ")
 
-	if strings.HasPrefix(m.Content, c.prefix+"점메추삭제") {
+	// Determine food type
+	switch typeArg {
+	case "lunch", "점심":
 		foodType = models.FoodTypeLunch
-		prefix = c.prefix + "점메추삭제"
-	} else if strings.HasPrefix(m.Content, c.prefix+"저메추삭제") {
+	case "dinner", "저녁":
 		foodType = models.FoodTypeDinner
-		prefix = c.prefix + "저메추삭제"
-	} else {
+	default:
+		s.ChannelMessageSend(m.ChannelID, "유효한 메뉴 유형(lunch/점심 또는 dinner/저녁)을 입력해주세요.")
 		return
 	}
 
-	// Extract food name
-	foodName := strings.TrimSpace(strings.TrimPrefix(m.Content, prefix))
 	if foodName == "" {
 		s.ChannelMessageSend(m.ChannelID, "삭제할 메뉴 이름을 입력해주세요.")
 		return
@@ -335,4 +333,19 @@ func (c *FoodCommand) handleDeleteFood(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
+}
+
+// NewFoodCommand는 새로운 음식 명령어 핸들러를 생성합니다
+func NewFoodCommand(log *zap.Logger, db *storage.MongoDB, prefix string) *FoodCommand {
+	return &FoodCommand{
+		log:      log.Named("food-command"),
+		db:       db,
+		prefix:   prefix,
+		repo:     storage.NewFoodRepository(db, log),
+	}
+}
+
+// Register는 더 이상 사용되지 않습니다. 대신 Command 인터페이스를 통해 명령어가 처리됩니다.
+func (c *FoodCommand) Register(session *discordgo.Session) {
+	// 빈 구현 - 하위 호환성 유지용
 }

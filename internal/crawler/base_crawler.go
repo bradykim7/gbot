@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bradykim7/gbot/pkg/logger"
 	"go.uber.org/zap"
 )
 
@@ -39,7 +38,6 @@ func NewBaseCrawler(log *zap.Logger) *BaseCrawler {
 func (c *BaseCrawler) FetchURL(ctx context.Context, url string) ([]byte, error) {
 	var (
 		resp    *http.Response
-		err     error
 		content []byte
 		retries = 0
 	)

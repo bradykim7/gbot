@@ -39,7 +39,7 @@ func New(cfg *config.Config, log *zap.Logger) (*Bot, error) {
 		session:  session,
 		config:   cfg,
 		log:      log.Named("bot"),
-		commands: commands.NewRegistry(cfg.CommandPrefix),
+		commands: commands.NewRegistry(cfg.CommandPrefix, log),
 		db:       db,
 	}
 	
@@ -123,17 +123,18 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 // registerCommands는 모든 명령어를 등록합니다
 func (b *Bot) registerCommands() {
 	// Ping 명령어 등록
-	pingCmd := commands.NewPingCommand()
-	pingCmd.Register(b.session)
+	pingCmd := commands.NewPingCommand(b.config.CommandPrefix)
+	b.commands.Register("ping", pingCmd)
 	
 	// 알림 명령어 등록
 	alertCmd := commands.NewAlertCommand(b.log, b.db, b.config.CommandPrefix)
-	alertCmd.Register(b.session)
+	b.commands.Register("alert", alertCmd)
+	b.commands.Register("알림", alertCmd) // Korean alias
 	
 	// 음식 명령어 등록
 	foodCmd := commands.NewFoodCommand(b.log, b.db, b.config.CommandPrefix)
-	foodCmd.Register(b.session)
+	b.commands.Register("food", foodCmd)
+	b.commands.Register("메뉴", foodCmd) // Korean alias
 	
 	// TODO: 다른 명령어들도 구현되는 대로 등록
-	// 참고: Registry 패턴 대신 직접 핸들러 등록 방식 사용
 }

@@ -3,24 +3,36 @@ package models
 import (
 	"fmt"
 	"strconv"
+	"time"
 )
 
 // Product represents a product from a deal website
 type Product struct {
-	ID         string `bson:"_id,omitempty"`
-	Title      string `bson:"title"`
-	Website    string `bson:"website"`
-	Product    string `bson:"product"`
-	Category   string `bson:"category"`
-	URL        string `bson:"url"`
-	KOPrice    int    `bson:"ko_price,omitempty"`
-	USPrice    float64 `bson:"us_price,omitempty"`
-	UploadDate int64  `bson:"upload_date,omitempty"`
-	UploadSite string `bson:"upload_site,omitempty"`
+	ID          string    `bson:"_id,omitempty"`
+	Title       string    `bson:"title"`
+	Website     string    `bson:"website"`
+	Product     string    `bson:"product"`
+	Category    string    `bson:"category"`
+	URL         string    `bson:"url"`
+	KOPrice     int       `bson:"ko_price,omitempty"`
+	USPrice     float64   `bson:"us_price,omitempty"`
+	PriceString string    `bson:"price_string,omitempty"`
+	UploadDate  int64     `bson:"upload_date,omitempty"`
+	UploadSite  string    `bson:"upload_site,omitempty"`
+	Comments    int       `bson:"comments,omitempty"`
+	Views       int       `bson:"views,omitempty"`
+	CrawledAt   time.Time `bson:"crawled_at,omitempty"`
+	Source      string    `bson:"source,omitempty"`
 }
 
 // GetPriceString returns a formatted price string
 func (p *Product) GetPriceString() string {
+	// If we already have a formatted price string, use it
+	if p.PriceString != "" {
+		return p.PriceString
+	}
+	
+	// Otherwise, format based on the price values
 	if p.KOPrice > 0 {
 		return fmt.Sprintf("%s KRW", formatNumber(p.KOPrice))
 	} else if p.USPrice > 0 {
@@ -44,7 +56,7 @@ func formatNumber(n int) string {
 		if i > 0 && (len(in)-i)%3 == 0 {
 			out = append(out, ',')
 		}
-		out = append(out, c)
+		out = append(out, byte(c))
 	}
 	
 	return string(out)
